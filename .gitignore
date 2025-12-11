@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# Data
+dataset/
+crohme_dataset/
+crohme_dataset_1/
+
+# VS Code
+.vscode/
+
+# Papers
+papers/
+
+# Results and Models
+src/results/
+*.pth
+*.pt
+
+# Keep inkml2img if it contains your source code
+# inkml2img/ # Python
+__pycache__/
+*.pyc
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# Data
+dataset/
+crohme_dataset/
+crohme_dataset_1/
+
+# VS Code
+.vscode/
+
+# Papers
+papers/
+
+# Results and Models
+src/results/
+*.pth
+*.pt
+
+# Keep inkml2img if it contains your source code
+inkml2img/ 
