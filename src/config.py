@@ -68,7 +68,7 @@ VAL_INKML_DIR = os.path.join(DATA_ROOT, "valid", "inkml")
 VAL_LG_DIR = os.path.join(DATA_ROOT, "valid", "lg_new_1")
 
 VOCAB_FILE = "./src/vocab.json"
-CHECKPOINT_DIR = "./checkpoints_5"
+CHECKPOINT_DIR = "./checkpoints_6"
 
 # ==========================================
 # 7. Helper Function to Export as Dict

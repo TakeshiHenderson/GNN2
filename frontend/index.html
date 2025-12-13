@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Handwritten Equation Solver</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Handwritten Equation Solver</h1>
+            <p>Draw a mathematical equation on the canvas below</p>
+        </header>
+        
+        <main>
+            <div class="canvas-container">
+                <canvas id="whiteboard" width="800" height="400"></canvas>
+            </div>
+            
+            <div class="controls">
+                <button id="clearBtn" class="btn btn-secondary">Clear</button>
+                <button id="submitBtn" class="btn btn-primary">Recognize</button>
+            </div>
+            
+            <div class="result-section" id="resultSection" style="display: none;">
+                <h2>Recognition Result</h2>
+                <div class="result-box">
+                    <label>LaTeX Output:</label>
+                    <div class="latex-output" id="latexOutput"></div>
+                </div>
+                <div class="result-box">
+                    <label>Raw Tokens:</label>
+                    <div class="tokens-output" id="tokensOutput"></div>
+                </div>
+                <div class="result-box">
+                    <label>Saved File:</label>
+                    <div class="file-output" id="fileOutput"></div>
+                </div>
+            </div>
+            
+            <div class="status" id="status"></div>
+        </main>
+    </div>
+    
+    <script src="/static/app.js"></script>
+</body>
+</html>
