@@ -24,7 +24,7 @@ def load_best_model(vocab_len, relation_len):
     model = GraphToGraphModel(model_conf).to(config.DEVICE)
     
     # Check for best model first, then fallback to latest epoch
-    best_path = os.path.join(config.CHECKPOINT_DIR, "best_model.pth")
+    best_path = os.path.join(config.CHECKPOINT_DIR, "checkpoint_ep50.pth")
     latest_path = os.path.join(config.CHECKPOINT_DIR, f"checkpoint_ep{config.EPOCHS}.pth")
     
     if os.path.exists(best_path):
@@ -39,6 +39,69 @@ def load_best_model(vocab_len, relation_len):
     model.load_state_dict(torch.load(checkpoint_path, map_location=config.DEVICE))
     model.eval()
     return model
+
+def tokens_to_latex(latex_tokens):
+    """
+    Process generated tokens to actual LaTeX syntax using relations.
+    
+    Converts tokens like ['y(-)', 'i(Sub)', '<EOS>(-)', '=(Right)'] 
+    to clean LaTeX: 'y_{i} = ...'
+    
+    Relations:
+        - Sub: subscript (_)
+        - Sup/Above: superscript (^)
+        - Right/-: horizontal (space or nothing)
+        - Inside: sqrt contents
+        - Below: under (for fractions, etc.)
+    
+    Args:
+        latex_tokens: List of tokens in format 'symbol(relation)'
+    
+    Returns:
+        str: Clean LaTeX string
+    """
+    result = []
+    i = 0
+    
+    while i < len(latex_tokens):
+        token = latex_tokens[i]
+        
+        # Parse symbol and relation
+        if '(' in token:
+            idx = token.rfind('(')
+            symbol = token[:idx]
+            relation = token[idx+1:-1]  # Remove ( and )
+        else:
+            symbol = token
+            relation = '-'
+        
+        # Skip EOS, SOS, PAD tokens
+        if symbol in ('<EOS>', '<SOS>', '<PAD>', ''):
+            i += 1
+            continue
+        
+        # Build LaTeX based on relation
+        if relation == 'Sub':
+            result.append(f'_{{{symbol}}}')
+        elif relation in ('Sup', 'Above'):
+            result.append(f'^{{{symbol}}}')
+        elif relation == 'Inside':
+            result.append(f'\\sqrt{{{symbol}}}')
+        elif relation == 'Below':
+            # For fractions - combine with previous if possible
+            if result and not result[-1].startswith('\\frac'):
+                prev = result.pop()
+                result.append(f'\\frac{{{prev}}}{{{symbol}}}')
+            else:
+                result.append(f'_{{{symbol}}}')  # Fallback to subscript
+        else:
+            # Right, -, or unknown - just append the symbol
+            result.append(symbol)
+        
+        i += 1
+    
+    return ' '.join(result)
+
 
 def greedy_decode(model, strokes, vocab_inv, relation_inv, max_len=50):
     """
@@ -344,7 +407,8 @@ def evaluate_test_set(num_samples=None, split='test'):
         
         if strokes:
             latex_tokens = greedy_decode(model, strokes, vocab_inv, relation_inv)
-            print(f"Predicted LaTeX: {' '.join(latex_tokens)}")
+            print(f"Predicted LaTeX: {tokens_to_latex(latex_tokens)}")
+            print(f"Raw tokens: {latex_tokens}")  # Keep raw for debugging
             
             lg_path = os.path.join(TEST_LG, os.path.basename(inkml_path).replace('.inkml', '.lg'))
             if os.path.exists(lg_path):
