@@ -42,13 +42,22 @@ def load_best_model(vocab_len, relation_len):
 
 def greedy_decode(model, strokes, vocab_inv, relation_inv, max_len=50):
     """
-    Corrected greedy generation using Placeholder Strategy.
+    Autoregressive greedy decoding for Graph-to-Graph model.
+    
+    Improved version with proper tree-structured adjacency:
+    - Uses parent stack to track open nodes that can have children
+    - Properly handles EOS (end-of-children) to pop back up the tree
+    - Builds adjacency with parent/brother/grandparent edges like training
     """
-    # 1. Encode Source
+    # Token indices from config (matches vocab.json)
+    SOS_TOKEN = config.SOS_TOKEN  # <SOS> = 1
+    EOS_TOKEN = config.EOS_TOKEN  # <EOS> = 2
+    
+    # 1. Encode Source Graph
     nodes_pts, edge_index, edge_attr = build_gnn_graph(strokes)
     num_strokes = len(nodes_pts)
 
-    # Dense conversion
+    # Dense conversion for edge features
     edge_dim = config.ENC_EDGE_DIM
     dense_edge_attr = torch.zeros((1, num_strokes, num_strokes, edge_dim)).to(config.DEVICE)
     adj_mask = torch.zeros((1, num_strokes, num_strokes)).to(config.DEVICE)
@@ -57,79 +66,137 @@ def greedy_decode(model, strokes, vocab_inv, relation_inv, max_len=50):
         src, dst = edge_index[0], edge_index[1]
         dense_edge_attr[0, src, dst] = edge_attr.to(config.DEVICE)
         adj_mask[0, src, dst] = 1.0
+    
+    # Add self-loops to ensure all strokes are visible in attention
+    for i in range(num_strokes):
+        adj_mask[0, i, i] = 1.0
         
     strokes_pts_list = [torch.tensor(pts, dtype=torch.float).to(config.DEVICE) for pts in nodes_pts]
     
     with torch.no_grad():
-        # Encode
+        # Encode source strokes
         stroke_node_feats = model.feature_extractor(strokes_pts_list)
-        stroke_feats = stroke_node_feats.unsqueeze(0)
+        stroke_feats = stroke_node_feats.unsqueeze(0)  # (1, N, H)
         enc_nodes, _, _, _ = model.encoder(stroke_feats, dense_edge_attr, adj_mask)
         
-        # 2. Decode Loop
-        # Start with EMPTY confirmed sequence
-        curr_tokens = [] 
+        # Source mask: ALL strokes are valid
+        source_mask = torch.ones((1, num_strokes), dtype=torch.float).to(config.DEVICE)
+        
+        # 2. Initialize Decoder State
+        # Token sequence and tree structure tracking
+        curr_tokens = [SOS_TOKEN]  # Start with SOS
         generated_syms = []
         
-        # Start Adjacency is empty
-        curr_adj = torch.zeros((1, 0, 0), dtype=torch.long).to(config.DEVICE)
+        # Tree structure: parent_stack tracks which nodes can have children
+        # Each entry: (node_index, depth)
+        parent_stack = [(0, 0)]  # SOS is root at depth 0
+        
+        # Track parent index for each node (for adjacency)
+        node_parents = [-1]  # SOS has no parent
+        node_left_brothers = [-1]  # SOS has no left brother
+        
+        # Initialize adjacency: just self-loop for SOS
+        curr_adj = torch.zeros((1, 1, 1), dtype=torch.long).to(config.DEVICE)
+        curr_adj[0, 0, 0] = 1  # Self-loop
         
         for step in range(max_len):
-            # A. Prepare Input: Add a PLACEHOLDER (0) for the node we want to predict
-            # If curr_tokens is [A, B], we feed [A, B, 0]
-            temp_tokens = curr_tokens + [0]
-            tgt_seq = torch.tensor([temp_tokens], dtype=torch.long).to(config.DEVICE)
+            # A. Feed all tokens generated so far
+            tgt_seq = torch.tensor([curr_tokens], dtype=torch.long).to(config.DEVICE)
             
-            # B. Prepare Adjacency: Add row/col for the placeholder
-            T_prev = len(curr_tokens)
-            T_new = T_prev + 1
-            new_adj = torch.zeros((1, T_new, T_new), dtype=torch.long).to(config.DEVICE)
-            
-            if T_prev > 0:
-                new_adj[:, :T_prev, :T_prev] = curr_adj # Copy existing graph
-                
-                # Heuristic: Connect new node to immediate previous as Parent (2)
-                # This ensures the GNN has a path to flow context to the new node.
-                new_adj[:, T_prev-1, T_prev] = 2 
-            
-            # Always add Self-Loop (1) for the new node (required for GNN)
-            new_adj[:, T_prev, T_prev] = 1
-            
-            # C. Forward Decoder
-            source_mask = (adj_mask.sum(dim=-1) > 0).float()
-            
+            # B. Forward Decoder
             node_logits, edge_logits, attention_weights = model.decoder(
                 tgt_seq, 
-                new_adj, 
+                curr_adj, 
                 enc_nodes, 
                 source_mask
             )
-
             
-            # D. Predict Symbol for the LAST node (the placeholder)
-            next_step_logits = node_logits[:, -1, :] 
+            # C. Predict next symbol based on LAST position
+            next_step_logits = node_logits[:, -1, :]  # (1, vocab_size)
             next_token_id = torch.argmax(next_step_logits, dim=-1).item()
+
+            # Predict Relation
+            next_edge_logits = edge_logits[:, -1, :] # (1, num_edge_classes)
+            next_edge_idx = torch.argmax(next_edge_logits, dim=-1).item()
+            relation_name = relation_inv.get(next_edge_idx, '?')
             
-            last_layer_attn = attention_weights[-1][0] # (T, N)
-            # Look at the attention distribution for the current step (last row)
-            current_step_attn = last_layer_attn[-1]
+            # Debug: Print attention info
+            last_layer_attn = attention_weights[-1][0]  # (T, N)
+            current_step_attn = last_layer_attn[-1]  # Attention for last token
             max_attn = current_step_attn.max().item()
-            print(f"Step {len(curr_tokens)}: Max Attn: {max_attn:.4f} | Token: {vocab_inv.get(next_token_id)}")
-            # Check EOS (Assuming EOS index is 1, check your vocab.json)
-            if next_token_id == 1: 
-                break
+            attended_stroke = current_step_attn.argmax().item()
             
-            # E. Commit the prediction
+            token_name = vocab_inv.get(next_token_id, '?')
+            print(f"Step {step}: Token: {token_name:10s} | Rel: {relation_name:8s} | Max Attn: {max_attn:.4f} | Stroke: {attended_stroke} | Stack: {len(parent_stack)}")
+            
+            # E. Add new node to sequence (ALWAYS add, even if EOS)
+            new_node_idx = len(curr_tokens)
             curr_tokens.append(next_token_id)
+            generated_syms.append(f"{token_name}({relation_name})")
+
+            # D. Check for EOS - this means "end children of current parent"
+            should_pop = False
+            if next_token_id == EOS_TOKEN:
+                should_pop = True
             
-            # Update Adjacency permanently for the next step
-            curr_adj = new_adj 
+            # F. Determine parent and brother for this new node
+            current_parent_idx, current_depth = parent_stack[-1] if parent_stack else (0, 0)
             
-            generated_syms.append(vocab_inv.get(next_token_id, '?'))
+            # Find left brother (previous child of same parent)
+            left_brother_idx = -1
+            for i in range(new_node_idx - 1, 0, -1):
+                if node_parents[i] == current_parent_idx:
+                    left_brother_idx = i
+                    break
+            
+            node_parents.append(current_parent_idx)
+            node_left_brothers.append(left_brother_idx)
+            
+            # G. Build new adjacency matrix
+            T_new = len(curr_tokens)
+            new_adj = torch.zeros((1, T_new, T_new), dtype=torch.long).to(config.DEVICE)
+            
+            # Copy existing structure
+            new_adj[:, :T_new-1, :T_new-1] = curr_adj
+            
+            # Self-loop for new node (edge type 1)
+            new_adj[0, new_node_idx, new_node_idx] = 1
+            
+            # Parent edge: new_node -> parent (edge type 2)
+            if current_parent_idx >= 0:
+                new_adj[0, new_node_idx, current_parent_idx] = 2
+            
+            # Left brother edge: brother -> new_node (edge type 3)
+            if left_brother_idx >= 0:
+                new_adj[0, new_node_idx, left_brother_idx] = 3
+                
+            # Grandparent edge: new_node -> grandparent (edge type 4)
+            if current_parent_idx > 0 and node_parents[current_parent_idx] >= 0:
+                grandparent_idx = node_parents[current_parent_idx]
+                new_adj[0, new_node_idx, grandparent_idx] = 4
+            
+            curr_adj = new_adj
+            
+            # H. Push this node onto stack (it can have children), UNLESS it is EOS
+            if not should_pop:
+                parent_stack.append((new_node_idx, current_depth + 1))
+            else:
+                # If it IS EOS, we are done with the Current Parent
+                if len(parent_stack) > 1:
+                     parent_stack.pop()
+                     print(f"  -> EOS: popped stack, now at depth {len(parent_stack)}")
+                else:
+                     print("EOS at root - generation complete.")
+                     break
+            
+            # Safety: prevent infinite loops
+            if len(generated_syms) >= max_len:
+                print("Max length reached.")
+                break
             
     return generated_syms
 
-def evaluate_test_set(num_samples=None):
+def evaluate_test_set(num_samples=None, split='test'):
     # 1. Setup
     with open(config.VOCAB_FILE, "r") as f:
         vocabs = json.load(f)
@@ -142,11 +209,18 @@ def evaluate_test_set(num_samples=None):
     
     processor = GroundTruthProcessor(symbol_vocab, relation_vocab)
     
-    TEST_INKML = os.path.join(config.DATA_ROOT, "test", "inkml") 
-    TEST_LG = os.path.join(config.DATA_ROOT, "test", "lg")
+    TEST_INKML = os.path.join(config.DATA_ROOT, split, "inkml") 
+    TEST_LG = os.path.join(config.DATA_ROOT, split, "lg")
+    
+    if split == 'train':
+        TEST_INKML = config.INKML_DIR
+        TEST_LG = config.LG_DIR
+    elif split == 'valid':
+        TEST_INKML = config.VAL_INKML_DIR
+        TEST_LG = config.VAL_LG_DIR
     
     if not os.path.exists(TEST_INKML):
-        print(f"Test directory not found. Using Validation set.")
+        print(f"{split} directory not found. Using Validation set.")
         TEST_INKML = config.VAL_INKML_DIR
         TEST_LG = config.VAL_LG_DIR
 
@@ -154,7 +228,7 @@ def evaluate_test_set(num_samples=None):
     
     if num_samples is not None:
         dataset.inkml_files = dataset.inkml_files[:num_samples]
-        print(f"Limiting test set: {len(dataset)} samples")
+        print(f"Limiting {split} set: {len(dataset)} samples")
 
     loader = torch.utils.data.DataLoader(dataset, batch_size=config.BATCH_SIZE, collate_fn=g2g_collate_fn)
     
@@ -165,13 +239,15 @@ def evaluate_test_set(num_samples=None):
         return
 
     # 4. Quantitative Evaluation
-    print("\n--- Quantitative Evaluation ---")
+    print(f"\n--- Quantitative Evaluation [{split}] ---")
     total_loss = 0
     correct_nodes = 0
     total_nodes = 0
+    exprate_numerator = 0
+    total_samples = 0
     
     with torch.no_grad():
-        for batch in tqdm(loader):
+        for batch_idx, batch in enumerate(tqdm(loader)):
             if batch is None: continue
             
             batch_gpu = {
@@ -180,20 +256,33 @@ def evaluate_test_set(num_samples=None):
                 'batch_adj_mask': batch['adj_mask'].to(config.DEVICE),
                 'target_nodes': batch['target_nodes'].to(config.DEVICE),
                 'target_adj': batch['target_adj'].to(config.DEVICE),
-                'gt_alignment_mask': batch['gt_alignment'].to(config.DEVICE)
+                'gt_alignment_mask': batch['gt_alignment'].to(config.DEVICE),
+                'enc_node_targets': batch['enc_node_targets'].to(config.DEVICE),
+                'enc_edge_targets': batch['enc_edge_targets'].to(config.DEVICE),
+                'dec_edge_targets': batch['dec_edge_targets'].to(config.DEVICE)
             }
             
             # Forward
-            out = model.forward_train(**batch_gpu)
+            # Shifted Input: 0 to T-1
+            forward_args = {
+                'batch_strokes': batch_gpu['batch_strokes'],
+                'batch_edge_attr': batch_gpu['batch_edge_attr'],
+                'batch_adj_mask': batch_gpu['batch_adj_mask'],
+                'target_nodes': batch_gpu['target_nodes'][:, :-1],
+                'target_adj': batch_gpu['target_adj'][:, :-1, :-1],
+                'gt_alignment_mask': batch_gpu['gt_alignment_mask'][:, :-1, :]
+            }
+            out = model.forward_train(**forward_args)
             
             # Loss Targets
+             # Shifted Target: 1 to T
             loss_targets = {
-                 'enc_node_targets': batch['enc_node_targets'].to(config.DEVICE),
-                 'enc_edge_targets': batch['enc_edge_targets'].to(config.DEVICE),
-                 'adj_mask': batch['adj_mask'].to(config.DEVICE),
-                 'target_nodes': batch['target_nodes'].to(config.DEVICE),
-                 'dec_edge_targets': batch['dec_edge_targets'].to(config.DEVICE),
-                 'gt_alignment': batch['gt_alignment'].to(config.DEVICE)
+                 'enc_node_targets': batch_gpu['enc_node_targets'],
+                 'enc_edge_targets': batch_gpu['enc_edge_targets'],
+                 'adj_mask': batch_gpu['batch_adj_mask'],
+                 'target_nodes': batch_gpu['target_nodes'][:, 1:],
+                 'dec_edge_targets': batch_gpu['dec_edge_targets'][:, 1:],
+                 'gt_alignment': batch_gpu['gt_alignment_mask'][:, 1:, :]
             }
             
             loss, _ = model.compute_loss(out, loss_targets)
@@ -202,18 +291,47 @@ def evaluate_test_set(num_samples=None):
             # Accuracy
             logits = out['dec_node_logits'] 
             preds = torch.argmax(logits, dim=-1)
-            targets = batch['target_nodes'].to(config.DEVICE)
+            targets = batch_gpu['target_nodes'][:, 1:] # Shifted target
             
             mask = targets != 0 
             correct = (preds == targets) & mask
             correct_nodes += correct.sum().item()
             total_nodes += mask.sum().item()
 
+            if batch_idx == 0: # Debug first batch
+                 print(f"DEBUG TARGET: {targets[0][:10].tolist()}")
+                 print(f"DEBUG PREDS:  {preds[0][:10].tolist()}")
+
+            # ExpRate: Exact Sequence Match
+            # Iterate through batch
+            batch_size = preds.size(0)
+            for i in range(batch_size):
+                # Get valid length
+                # Target is padded with 0. Find first 0 or take all.
+                # Note: Target is shifted (no SOS), so it ends with EOS or PAD.
+                # Preds are also same shape.
+                
+                # Get non-padded target
+                t_seq = targets[i]
+                valid_mask = t_seq != 0
+                t_seq = t_seq[valid_mask]
+                
+                # Get corresponding preds
+                p_seq = preds[i]
+                p_seq = p_seq[valid_mask] # Compare same length
+                
+                if torch.equal(t_seq, p_seq):
+                    exprate_numerator += 1
+            
+            total_samples += batch_size
+
     avg_loss = total_loss / len(loader) if len(loader) > 0 else 0
     acc = correct_nodes / total_nodes * 100 if total_nodes > 0 else 0
+    exprate = exprate_numerator / total_samples * 100 if total_samples > 0 else 0
     
     print(f"Avg Loss: {avg_loss:.4f}")
     print(f"Symbol Accuracy: {acc:.2f}%")
+    print(f"ExpRate (Exact Match): {exprate:.2f}%")
 
     # 5. Qualitative Inference
     print("\n--- Generation Example ---")
@@ -237,6 +355,7 @@ def evaluate_test_set(num_samples=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_samples', type=int, default=None, help="Number of test files")
+    parser.add_argument('--split', type=str, default='test', choices=['train', 'valid', 'test'], help="Dataset split")
     args = parser.parse_args()
     
-    evaluate_test_set(num_samples=args.num_samples)
+    evaluate_test_set(num_samples=args.num_samples, split=args.split)

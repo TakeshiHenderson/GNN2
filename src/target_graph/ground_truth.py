@@ -149,37 +149,61 @@ class GroundTruthProcessor:
         
         # 4. Linearize (DFS)
         node_sequence = self.get_dfs_sequence(root)
-        num_nodes = len(node_sequence)
+        num_original_nodes = len(node_sequence)
+        
+        # CRITICAL: Prepend SOS token so model learns to predict from SOS during inference
+        # This adds +1 to all indices
+        SOS_TOKEN = self.vocab.get('<SOS>', 1)
+        num_nodes = num_original_nodes + 1  # +1 for SOS
         
         target_nodes = torch.zeros(num_nodes, dtype=torch.long)
         target_adj = torch.zeros((num_nodes, num_nodes), dtype=torch.long)
         dec_edge_targets = torch.zeros(num_nodes, dtype=torch.long)
         alignment_stroke_ids = []
+        
+        # SOS at position 0
+        target_nodes[0] = SOS_TOKEN
+        target_adj[0, 0] = 1  # Self-loop for SOS
+        alignment_stroke_ids.append([])  # SOS has no strokes
+        dec_edge_targets[0] = 0  # SOS has no edge relation
 
+        # Fill in actual symbols starting at position 1
         for t, node in enumerate(node_sequence):
-            sym_idx = self.vocab.get(node.label, self.vocab.get('<UNK>', 0))
-            target_nodes[t] = sym_idx
+            t_shifted = t + 1  # Shift by 1 because SOS is at position 0
+            
+            sym_idx = self.vocab.get(node.label, self.vocab.get('<UNK>', 3))
+            target_nodes[t_shifted] = sym_idx
             alignment_stroke_ids.append(node.stroke_ids)
             
-            target_adj[t, t] = 1 
+            # Self-loop
+            target_adj[t_shifted, t_shifted] = 1 
             
+            # Parent edge (shifted indices)
             if node.parent:
-                p_idx = node.parent.dfs_index
-                target_adj[t, p_idx] = 2 
+                p_idx = node.parent.dfs_index + 1  # +1 for SOS offset
+                target_adj[t_shifted, p_idx] = 2 
                 
                 for rel, child in node.parent.children:
                     if child == node:
                         rel_idx = self.relation_vocab.get(rel, 0)
-                        dec_edge_targets[t] = rel_idx
+                        dec_edge_targets[t_shifted] = rel_idx
                         break
+            else:
+                # Root node's parent is SOS
+                target_adj[t_shifted, 0] = 2  # Root points to SOS as parent
             
+            # Left brother edge (shifted indices)  
             if node.left_brother:
-                bro_idx = node.left_brother.dfs_index
-                target_adj[bro_idx, t] = 3
+                bro_idx = node.left_brother.dfs_index + 1  # +1 for SOS offset
+                target_adj[t_shifted, bro_idx] = 3
                 
+            # Grandparent edge (shifted indices)
             if node.parent and node.parent.parent:
-                gp_idx = node.parent.parent.dfs_index
-                target_adj[gp_idx, t] = 4
+                gp_idx = node.parent.parent.dfs_index + 1  # +1 for SOS offset
+                target_adj[t_shifted, gp_idx] = 4
+            elif node.parent and not node.parent.parent:
+                # Parent is root, grandparent is SOS
+                target_adj[t_shifted, 0] = 4  # Point to SOS as grandparent
 
         return {
             "target_nodes": target_nodes,

@@ -12,8 +12,8 @@ class G2GInference:
         self.idx_to_sym = {v: k for k, v in vocab.items()}
         self.idx_to_rel = {v: k for k, v in relation_vocab.items()}
         
-        self.sos_token = vocab.get('<SOS>', 0) # Assuming 0 or specific ID
-        self.eos_token = vocab.get('<EOS>', 1)
+        self.sos_token = vocab.get('<SOS>', 1)  # Updated: SOS is now index 1
+        self.eos_token = vocab.get('<EOS>', 2)   # Updated: EOS is now index 2
         
         # For Masking logic
         self.parent_relation_idx = 2
@@ -52,7 +52,8 @@ class G2GInference:
             
             # Loop
             for t in range(max_steps):
-                source_mask = (adj_mask.sum(dim=-1) > 0).float()
+                # CRITICAL FIX: Ensure all strokes are visible (not just connected ones)
+                source_mask = torch.ones((1, enc_nodes.size(1)), device=self.device)
                 
                 # Apply Masking if we are not at root
                 # "Mask all sub-graphs that are not adjacent to the corresponding sub-graph of its parent node" 

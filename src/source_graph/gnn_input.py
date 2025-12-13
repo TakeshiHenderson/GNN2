@@ -173,9 +173,6 @@ def build_gnn_graph(strokes):
 
             final_edges.add((id_curr, id_next))
             final_edges.add((id_next, id_curr))
-    
-    for s in strokes:
-        final_edges.add((s.id, s.id))  # Self-loop
 
     # Construct PyTorch Tensors
     src_indices = []
@@ -293,7 +290,7 @@ def parse_inkml_and_process(file_path):
 
 if __name__ == "__main__":
     # Test block - Visualize source graph construction
-    file_path = "../crohme_dataset/test/inkml/0102.inkml"
+    file_path = "/home/takeshi/Documents/AOL DL/crohme_dataset/test/inkml/0661.inkml"
     if os.path.exists(file_path):
         print(f"Processing: {file_path}")
         

@@ -27,12 +27,21 @@ DEC_NUM_EDGE_CLASSES = 8       # 6 Spatial Relations + Self + End-Node ('-')
                                # (Right, Above, Below, Sup, Sub, Inside, -, Self)
 
 # ==========================================
+# 3.1 Special Token Indices (from vocab.json)
+# ==========================================
+PAD_TOKEN = 0   # <PAD> - Padding
+SOS_TOKEN = 1   # <SOS> - Start of Sequence (for autoregressive decoding)
+EOS_TOKEN = 2   # <EOS> - End of Sequence
+UNK_TOKEN = 3   # <UNK> - Unknown symbol
+
+# ==========================================
 # 4. Training Hyperparameters
 # ==========================================
 BATCH_SIZE = 8
 LEARNING_RATE = 5e-4           # Adam Optimizer learning rate
 WEIGHT_DECAY = 1e-4
 EPOCHS = 50
+DROPOUT = 0.5                  # Dropout probability
 CLIP_GRAD = 5.0                # Gradient clipping threshold
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -59,7 +68,7 @@ VAL_INKML_DIR = os.path.join(DATA_ROOT, "valid", "inkml")
 VAL_LG_DIR = os.path.join(DATA_ROOT, "valid", "lg_new_1")
 
 VOCAB_FILE = "./src/vocab.json"
-CHECKPOINT_DIR = "./checkpoints_1"
+CHECKPOINT_DIR = "./checkpoints_5"
 
 # ==========================================
 # 7. Helper Function to Export as Dict
@@ -82,5 +91,7 @@ def get_model_config(vocab_len, relation_vocab_len):
 
         # Decoder GNN
         'num_decoder_layers': DEC_LAYERS,     # Matches config.get('num_decoder_layers')
+        'num_decoder_layers': DEC_LAYERS,     # Matches config.get('num_decoder_layers')
         'num_target_edge_classes': relation_vocab_len,   # Matches config.get('num_target_edge_classes')
+        'dropout': DROPOUT
     }

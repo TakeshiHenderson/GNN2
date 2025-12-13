@@ -1,0 +1,12 @@
+{
+    "symbol_vocab": {
+        "<PAD>": 0,
+        "<SOS>": 1,
+        "<EOS>": 2,
+        "<UNK>": 3
+    },
+    "relation_vocab": {
+        "<PAD>": 0,
+        "-": 1
+    }
+}

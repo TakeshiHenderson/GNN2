@@ -32,14 +32,16 @@ class GraphToGraphModel(nn.Module):
             hidden_dim=config['hidden_dim'],
             num_layers=config.get('num_encoder_layers', 3),
             num_node_classes=config['num_source_node_classes'],
-            num_edge_classes=config['num_source_edge_classes']
+            num_edge_classes=config['num_source_edge_classes'],
+            dropout=config.get('dropout', 0.0)
         )
 
         self.decoder = DecoderGNN(
             num_symbols=config['num_source_node_classes'],
             hidden_dim=config['hidden_dim'],
             num_layers=config.get('num_decoder_layers', 3),
-            num_edge_classes=config.get('num_target_edge_classes')
+            num_edge_classes=config.get('num_target_edge_classes'),
+            dropout=config.get('dropout', 0.0)
         )
 
     def forward_train(self, 
@@ -91,7 +93,8 @@ class GraphToGraphModel(nn.Module):
         )
 
         # Decoder GNN
-        source_mask = (batch_adj_mask.sum(dim=-1) > 0).float()
+        # Source mask: ALL strokes are valid (self-loops added in train.py)
+        source_mask = torch.ones((source_nodes.size(0), source_nodes.size(1)), device=source_nodes.device)
 
         dec_node_logits, dec_edge_logits, attn_weights = self.decoder(
             target_nodes,

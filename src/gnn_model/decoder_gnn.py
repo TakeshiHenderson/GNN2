@@ -4,9 +4,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class DecoderGNNLayer(nn.Module):
-    def __init__(self, hidden_dim):
+    def __init__(self, hidden_dim, dropout=0.0):
         super(DecoderGNNLayer, self).__init__()
         self.hidden_dim = hidden_dim
+        self.dropout = dropout
 
         # Eq 8 : GCN Weights for different edge types
         # Grandparent (gg), Parent (pc), Brother (bb), Self (ce)
@@ -56,6 +57,7 @@ class DecoderGNNLayer(nn.Module):
 
         # Eq 8 : h_m^t = glu(sum(w * neighbors))
         h_t = self.glu(agg_self + agg_parent + agg_brother + agg_grand)
+        h_t = F.dropout(h_t, p=self.dropout, training=self.training)
 
 
         # Eq 11 : Attention
@@ -67,6 +69,7 @@ class DecoderGNNLayer(nn.Module):
         values = self.W_v(source_nodes)                   # (B, N, H)
 
         attn_scores = torch.bmm(query, keys.transpose(1, 2))
+        attn_scores = attn_scores / math.sqrt(self.hidden_dim)
 
         if source_mask is not None:
             attn_scores = attn_scores.masked_fill(source_mask.unsqueeze(1) == 0, float('-inf'))
@@ -76,6 +79,7 @@ class DecoderGNNLayer(nn.Module):
 
         context = torch.bmm(attn_weights, values)         # (B, T, H)
         output = self.W_z(context + h_t)                # (B, T, H)
+        output = F.dropout(output, p=self.dropout, training=self.training)
 
         # OPTIONAL : Layer Norm on resnet
         output = self.layer_norm(output + target_nodes)
@@ -83,7 +87,7 @@ class DecoderGNNLayer(nn.Module):
         return output, attn_weights
     
 class DecoderGNN(nn.Module):
-    def __init__(self, num_symbols, hidden_dim, num_layers, num_edge_classes):
+    def __init__(self, num_symbols, hidden_dim, num_layers, num_edge_classes, dropout=0.0):
         super(DecoderGNN, self).__init__()
         self.hidden_dim = hidden_dim
 
@@ -91,7 +95,7 @@ class DecoderGNN(nn.Module):
         self.embedding = nn.Embedding(num_symbols, hidden_dim, padding_idx=0)
 
         self.layers = nn.ModuleList([
-            DecoderGNNLayer(hidden_dim) for _ in range(num_layers)
+            DecoderGNNLayer(hidden_dim, dropout=dropout) for _ in range(num_layers)
         ])
 
         # Supervision Heads
@@ -142,16 +146,16 @@ class DecoderGNN(nn.Module):
         #  1. Node Symbol Loss (L_nz) 
         vocab_size = node_logits.size(-1)
         loss_nz = F.cross_entropy(
-            node_logits.view(-1, vocab_size), 
-            targets.view(-1), 
+            node_logits.reshape(-1, vocab_size), 
+            targets.reshape(-1), 
             ignore_index=padding_idx
         )
 
         #  2. Edge Geometric Loss (L_eg) 
         num_edge_classes = edge_logits.size(-1)
         loss_eg = F.cross_entropy(
-            edge_logits.view(-1, num_edge_classes), 
-            target_edge_labels.view(-1), 
+            edge_logits.reshape(-1, num_edge_classes), 
+            target_edge_labels.reshape(-1), 
             ignore_index=padding_idx
         )
 
@@ -179,13 +183,13 @@ class DecoderGNN(nn.Module):
         subgraph_logits = self.subgraph_classifier(avg_subgraph_features)
         
         raw_loss_sg = F.cross_entropy(
-            subgraph_logits.view(-1, vocab_size),
-            targets.view(-1),
+            subgraph_logits.reshape(-1, vocab_size),
+            targets.reshape(-1),
             reduction='none',
             ignore_index=padding_idx
         )
-
-        loss_sg = raw_loss_sg[valid_mask.view(-1)].mean()
+        
+        loss_sg = raw_loss_sg[valid_mask.reshape(-1)].mean()
 
         # TODO: Move weights into config.py
         #  5. Weighted Sum (Eq 26) 

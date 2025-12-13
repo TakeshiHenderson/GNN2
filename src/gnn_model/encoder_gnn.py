@@ -3,9 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class GATLayer(nn.Module):
-    def __init__(self, hidden_dim, alpha=0.2):
+    def __init__(self, hidden_dim, dropout=0.0, alpha=0.2):
         super(GATLayer, self).__init__()
-        self.hiddn_dim = hidden_dim
+        self.hidden_dim = hidden_dim
+        self.dropout = dropout
         
         # Eq 4: Edge update weight
         self.W_b = nn.Linear(3 * hidden_dim, hidden_dim, bias=False)
@@ -39,7 +40,9 @@ class GATLayer(nn.Module):
         f_j = nodes.unsqueeze(1).expand(-1, num_nodes, -1, -1)
 
         edge_concat = torch.cat([f_i, edges, f_j], dim=-1)
+        edge_concat = torch.cat([f_i, edges, f_j], dim=-1)
         new_edges = self.leaky_relu(self.W_b(edge_concat))
+        new_edges = F.dropout(new_edges, p=self.dropout, training=self.training)
         new_edges = new_edges * adj_mask.unsqueeze(-1)
 
         # OPTIONAL : Layer Norm on resnet
@@ -56,7 +59,7 @@ class GATLayer(nn.Module):
 
         sum_terms = term_edge + term_node_i + term_node_j
         r_ij_unnorm = self.leaky_relu(self.u_b(sum_terms)).squeeze(-1)
-        r_ij_masked = r_ij_unnorm.masked_fill(adj_mask == 0, float('-inf'))
+        r_ij_masked = r_ij_unnorm.masked_fill(adj_mask.transpose(1, 2) == 0, float('-inf'))
 
         attention_coeffs = F.softmax(r_ij_masked, dim=2)
         # If a row was all -inf, softmax returns NaN. Replace with 0.
@@ -64,8 +67,10 @@ class GATLayer(nn.Module):
 
         # Eq 5: Update Node Features
         nodes_projected = self.W_f(nodes)
+        nodes_projected = self.W_f(nodes)
         aggregated_features = torch.bmm(attention_coeffs, nodes_projected)
         new_nodes = self.leaky_relu(aggregated_features)
+        new_nodes = F.dropout(new_nodes, p=self.dropout, training=self.training)
 
         # OPTIONAL : Layer Norm on resnet
         new_nodes = self.node_layer_norm(new_nodes + nodes)
@@ -74,14 +79,14 @@ class GATLayer(nn.Module):
     
 
 class EncoderGNN(nn.Module):
-    def __init__(self, node_input_dim, edge_input_dim, hidden_dim, num_layers, num_node_classes, num_edge_classes):
+    def __init__(self, node_input_dim, edge_input_dim, hidden_dim, num_layers, num_node_classes, num_edge_classes, dropout=0.0):
         super(EncoderGNN, self).__init__()
         
         self.input_proj_nodes = nn.Linear(node_input_dim, hidden_dim) if node_input_dim != hidden_dim else nn.Identity()
         self.input_proj_edges = nn.Linear(edge_input_dim, hidden_dim)
 
         self.layers = nn.ModuleList([
-            GATLayer(hidden_dim) for _ in range(num_layers)
+            GATLayer(hidden_dim, dropout=dropout) for _ in range(num_layers)
         ])
 
         self.node_classifier = nn.Linear(hidden_dim, num_node_classes)

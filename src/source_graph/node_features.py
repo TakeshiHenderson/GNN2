@@ -69,9 +69,9 @@ class StrokeNodeEncoder(nn.Module):
         # Input projection to match hidden dim
         self.input_proj = nn.Linear(input_dim, hidden_dim)
 
-        # Stacking the blocks
-        for _ in range(n_blocks):
-            self.blocks.append(GRU_TCN_GLU_Block(hidden_dim, hidden_dim))
+        # Stacking the blocks with increasing dilation for larger receptive field
+        for i in range(n_blocks):
+            self.blocks.append(GRU_TCN_GLU_Block(hidden_dim, hidden_dim, dilation=2**i))
 
     def forward(self, strokes_points: List[Tensor]) -> Tensor:
         """
@@ -93,9 +93,9 @@ class StrokeNodeEncoder(nn.Module):
         
         x = self.input_proj(x)
 
-        # Pass through Blocks (BiGRU -> TCN -> GLU)
+        # Pass through Blocks (BiGRU -> TCN -> GLU) with residual connections
         for block in self.blocks:
-            x = block(x) 
+            x = x + block(x)  # Residual connection for better gradient flow 
         # Remove batch dim -> (Total_L, hidden_dim)
         sequence_features = x.squeeze(0)
 

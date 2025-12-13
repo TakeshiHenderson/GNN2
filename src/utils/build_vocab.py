@@ -52,10 +52,12 @@ def build_vocab_from_dataset(data_dir, output_file="vocab.json"):
 
     # 2. Build Symbol Vocabulary
     # Standard Special Tokens
+    # <SOS> is required for autoregressive decoding (inference)
     symbol_vocab = {
         '<PAD>': 0, 
-        '<EOS>': 1, 
-        '<UNK>': 2
+        '<SOS>': 1,
+        '<EOS>': 2, 
+        '<UNK>': 3
     }
     
     # Sort symbols for deterministic indices
