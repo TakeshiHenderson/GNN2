@@ -75,6 +75,6 @@ def plot_logs(csv_path, output_dir):
 
 if __name__ == "__main__":
     base_dir = "/home/takeshi/Documents/AOL DL"
-    csv_file = os.path.join(base_dir, "checkpoints_5/training_log.csv")
-    output_folder = os.path.join(base_dir, "checkpoints_5")
+    csv_file = os.path.join(base_dir, "checkpoints_8/training_log.csv")
+    output_folder = os.path.join(base_dir, "checkpoints_8")
     plot_logs(csv_file, output_folder)
