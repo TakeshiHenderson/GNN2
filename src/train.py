@@ -280,9 +280,19 @@ def train():
     print(f"Model initialized on {config.DEVICE}")
 
     optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE, weight_decay=config.WEIGHT_DECAY)
+    
+    # Learning Rate Scheduler - reduces LR when val loss plateaus
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 
+        mode='min', 
+        patience=config.LR_SCHEDULER_PATIENCE,
+        factor=config.LR_SCHEDULER_FACTOR,
+        min_lr=config.LR_SCHEDULER_MIN_LR
+    )
 
     best_val_loss = float('inf')
     start_epoch = 0
+    epochs_without_improvement = 0  # For early stopping
     
     # --- Resume Logic ---
     # Find latest checkpoint
@@ -387,6 +397,11 @@ def train():
         print(f"Epoch {epoch+1} Summary:")
         print(f"  Train Loss: {avg_train_loss:.6f} | {fmt_metrics(avg_train_metrics)}")
         print(f"  Val Loss:   {avg_val_loss:.6f} | {fmt_metrics(val_metrics)}")
+        
+        # Step the LR scheduler based on validation loss
+        scheduler.step(avg_val_loss)
+        current_lr = optimizer.param_groups[0]['lr']
+        print(f"  Current LR: {current_lr:.2e}")
 
         # --- CSV LOGGING ---
         file_exists = os.path.isfile(log_csv_path)
@@ -414,13 +429,25 @@ def train():
             
             writer.writerow(row_data)
         
-        # Checkpoint
-        if avg_val_loss < best_val_loss:
+        # --- Early Stopping & Checkpoint ---
+        if avg_val_loss < best_val_loss - config.EARLY_STOP_MIN_DELTA:
             best_val_loss = avg_val_loss
+            epochs_without_improvement = 0
             torch.save(model.state_dict(), os.path.join(config.CHECKPOINT_DIR, "best_model.pth"))
             print(f"  -> Best model saved! (Val Loss: {best_val_loss:.4f})")
+        else:
+            epochs_without_improvement += 1
+            print(f"  -> No improvement for {epochs_without_improvement} epochs (best: {best_val_loss:.4f})")
             
         torch.save(model.state_dict(), os.path.join(config.CHECKPOINT_DIR, f"checkpoint_ep{epoch+1}.pth"))
+        
+        # Early stopping check
+        if epochs_without_improvement >= config.EARLY_STOP_PATIENCE:
+            print(f"\n{'='*50}")
+            print(f"Early stopping triggered after {epoch+1} epochs!")
+            print(f"Best validation loss: {best_val_loss:.4f}")
+            print(f"{'='*50}")
+            break
     
 
 if __name__ == "__main__":

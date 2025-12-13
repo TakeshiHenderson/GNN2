@@ -21,7 +21,7 @@ papers/
 # Results and Models
 src/results/
 *.pth
-*.pt
+# *.pt
 
 # Keep inkml2img if it contains your source code
 # inkml2img/ # Python
@@ -43,11 +43,6 @@ crohme_dataset_1/
 
 # Papers
 papers/
-
-# Results and Models
-src/results/
-*.pth
-*.pt
 
 # Keep inkml2img if it contains your source code
 inkml2img/ 

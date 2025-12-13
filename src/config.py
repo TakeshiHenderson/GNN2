@@ -40,10 +40,22 @@ UNK_TOKEN = 3   # <UNK> - Unknown symbol
 BATCH_SIZE = 8
 LEARNING_RATE = 5e-4           # Adam Optimizer learning rate
 WEIGHT_DECAY = 1e-4
-EPOCHS = 50
-DROPOUT = 0.5                  # Dropout probability
+EPOCHS = 100
+DROPOUT = 0.5                  # Dropout probability (back to original)
 CLIP_GRAD = 5.0                # Gradient clipping threshold
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Early Stopping
+EARLY_STOP_PATIENCE = 10       # Stop if val loss doesn't improve for N epochs
+EARLY_STOP_MIN_DELTA = 0.001   # Minimum improvement to count as improvement
+
+# Label Smoothing (for regularization)
+LABEL_SMOOTHING = 0.1          # Back to original value
+
+# Learning Rate Scheduler
+LR_SCHEDULER_PATIENCE = 5      # Reduce LR after N epochs without improvement
+LR_SCHEDULER_FACTOR = 0.5      # Multiply LR by this factor when reducing
+LR_SCHEDULER_MIN_LR = 1e-6     # Minimum learning rate
 
 # ==========================================
 # 5. Loss Weights (Eq 26)
@@ -68,7 +80,7 @@ VAL_INKML_DIR = os.path.join(DATA_ROOT, "valid", "inkml")
 VAL_LG_DIR = os.path.join(DATA_ROOT, "valid", "lg_new_1")
 
 VOCAB_FILE = "./src/vocab.json"
-CHECKPOINT_DIR = "./checkpoints_6"
+CHECKPOINT_DIR = "./checkpoints_8"
 
 # ==========================================
 # 7. Helper Function to Export as Dict

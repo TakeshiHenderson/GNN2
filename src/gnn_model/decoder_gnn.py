@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import config  # For label smoothing config
 
 class DecoderGNNLayer(nn.Module):
     def __init__(self, hidden_dim, dropout=0.0):
@@ -143,20 +144,22 @@ class DecoderGNN(nn.Module):
             gt_stroke_alignment: (B, T, N) - Binary mask (1 if stroke n belongs to symbol t)
             padding_idx: Index to ignore
         """
-        #  1. Node Symbol Loss (L_nz) 
+        #  1. Node Symbol Loss (L_nz) with Label Smoothing
         vocab_size = node_logits.size(-1)
         loss_nz = F.cross_entropy(
             node_logits.reshape(-1, vocab_size), 
             targets.reshape(-1), 
-            ignore_index=padding_idx
+            ignore_index=padding_idx,
+            label_smoothing=config.LABEL_SMOOTHING  # From config for regularization
         )
 
-        #  2. Edge Geometric Loss (L_eg) 
+        #  2. Edge Geometric Loss (L_eg) with Label Smoothing
         num_edge_classes = edge_logits.size(-1)
         loss_eg = F.cross_entropy(
             edge_logits.reshape(-1, num_edge_classes), 
             target_edge_labels.reshape(-1), 
-            ignore_index=padding_idx
+            ignore_index=padding_idx,
+            label_smoothing=config.LABEL_SMOOTHING  # From config for regularization
         )
 
         #  3. Sub-graph Attention Loss (L_sa) 

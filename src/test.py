@@ -24,7 +24,7 @@ def load_best_model(vocab_len, relation_len):
     model = GraphToGraphModel(model_conf).to(config.DEVICE)
     
     # Check for best model first, then fallback to latest epoch
-    best_path = os.path.join(config.CHECKPOINT_DIR, "checkpoint_ep50.pth")
+    best_path = os.path.join(config.CHECKPOINT_DIR, "checkpoint_ep48.pth")
     latest_path = os.path.join(config.CHECKPOINT_DIR, f"checkpoint_ep{config.EPOCHS}.pth")
     
     if os.path.exists(best_path):
@@ -259,6 +259,7 @@ def greedy_decode(model, strokes, vocab_inv, relation_inv, max_len=50):
             
     return generated_syms
 
+
 def evaluate_test_set(num_samples=None, split='test'):
     # 1. Setup
     with open(config.VOCAB_FILE, "r") as f:
@@ -273,7 +274,7 @@ def evaluate_test_set(num_samples=None, split='test'):
     processor = GroundTruthProcessor(symbol_vocab, relation_vocab)
     
     TEST_INKML = os.path.join(config.DATA_ROOT, split, "inkml") 
-    TEST_LG = os.path.join(config.DATA_ROOT, split, "lg")
+    TEST_LG = os.path.join(config.DATA_ROOT, split, "lg_new_1")  # Use lg_new_1 for consistent format
     
     if split == 'train':
         TEST_INKML = config.INKML_DIR
@@ -306,6 +307,8 @@ def evaluate_test_set(num_samples=None, split='test'):
     total_loss = 0
     correct_nodes = 0
     total_nodes = 0
+    correct_edges = 0
+    total_edges = 0
     exprate_numerator = 0
     total_samples = 0
     
@@ -351,64 +354,106 @@ def evaluate_test_set(num_samples=None, split='test'):
             loss, _ = model.compute_loss(out, loss_targets)
             total_loss += loss.item()
             
-            # Accuracy
+            # Symbol Accuracy
             logits = out['dec_node_logits'] 
             preds = torch.argmax(logits, dim=-1)
             targets = batch_gpu['target_nodes'][:, 1:] # Shifted target
             
-            mask = targets != 0 
+            # Mask: exclude PAD (0) tokens for accuracy calculation
+            mask = targets != config.PAD_TOKEN
             correct = (preds == targets) & mask
             correct_nodes += correct.sum().item()
             total_nodes += mask.sum().item()
+            
+            # Relationship/Edge Accuracy
+            edge_logits = out['dec_edge_logits']
+            edge_preds = torch.argmax(edge_logits, dim=-1)
+            edge_targets = batch_gpu['dec_edge_targets'][:, 1:]  # Shifted target
+            
+            edge_correct = (edge_preds == edge_targets) & mask
+            correct_edges += edge_correct.sum().item()
+            total_edges += mask.sum().item()
 
             if batch_idx == 0: # Debug first batch
                  print(f"DEBUG TARGET: {targets[0][:10].tolist()}")
                  print(f"DEBUG PREDS:  {preds[0][:10].tolist()}")
 
-            # ExpRate: Exact Sequence Match
-            # Iterate through batch
+            # ExpRate and Error Metrics
             batch_size = preds.size(0)
             for i in range(batch_size):
-                # Get valid length
-                # Target is padded with 0. Find first 0 or take all.
-                # Note: Target is shifted (no SOS), so it ends with EOS or PAD.
-                # Preds are also same shape.
-                
-                # Get non-padded target
+                # Get target sequence (excluding PAD)
                 t_seq = targets[i]
-                valid_mask = t_seq != 0
-                t_seq = t_seq[valid_mask]
+                valid_mask = t_seq != config.PAD_TOKEN
+                t_seq = t_seq[valid_mask].tolist()
                 
-                # Get corresponding preds
-                p_seq = preds[i]
-                p_seq = p_seq[valid_mask] # Compare same length
+                # Get prediction sequence (same length as valid target)
+                p_seq = preds[i][valid_mask].tolist()
                 
-                if torch.equal(t_seq, p_seq):
+                # Find first EOS in both sequences for fair comparison
+                t_eos_idx = len(t_seq)
+                p_eos_idx = len(p_seq)
+                for idx, tok in enumerate(t_seq):
+                    if tok == config.EOS_TOKEN:
+                        t_eos_idx = idx + 1  # Include EOS
+                        break
+                for idx, tok in enumerate(p_seq):
+                    if tok == config.EOS_TOKEN:
+                        p_eos_idx = idx + 1  # Include EOS
+                        break
+                
+                # Trim to first EOS (compare meaningful content only)
+                t_trimmed = t_seq[:t_eos_idx]
+                p_trimmed = p_seq[:p_eos_idx]
+                
+                # Debug: Print first 3 samples to see what's happening
+                if total_samples + i < 3:
+                    print(f"\n  Sample {total_samples + i}:")
+                    print(f"    Target ({len(t_trimmed)} tokens): {t_trimmed[:15]}...")
+                    print(f"    Pred   ({len(p_trimmed)} tokens): {p_trimmed[:15]}...")
+                    print(f"    Match: {t_trimmed == p_trimmed}")
+                
+                # Count errors (for detailed metrics)
+                t_symbols = [tok for tok in t_trimmed if tok != config.EOS_TOKEN]
+                p_symbols = [tok for tok in p_trimmed if tok != config.EOS_TOKEN]
+                num_errors = sum(1 for a, b in zip(t_symbols, p_symbols) if a != b)
+                num_errors += abs(len(t_symbols) - len(p_symbols))
+                
+                # ExpRate: Exact match
+                if t_trimmed == p_trimmed:
                     exprate_numerator += 1
             
             total_samples += batch_size
 
     avg_loss = total_loss / len(loader) if len(loader) > 0 else 0
-    acc = correct_nodes / total_nodes * 100 if total_nodes > 0 else 0
+    symbol_acc = correct_nodes / total_nodes * 100 if total_nodes > 0 else 0
+    edge_acc = correct_edges / total_edges * 100 if total_edges > 0 else 0
     exprate = exprate_numerator / total_samples * 100 if total_samples > 0 else 0
     
-    print(f"Avg Loss: {avg_loss:.4f}")
-    print(f"Symbol Accuracy: {acc:.2f}%")
-    print(f"ExpRate (Exact Match): {exprate:.2f}%")
+    print(f"\n{'='*50}")
+    print(f"TEACHER-FORCING RESULTS [{split}]")
+    print(f"{'='*50}")
+    print(f"Avg Loss:           {avg_loss:.4f}")
+    print(f"Symbol Accuracy:    {symbol_acc:.2f}%")
+    print(f"Relation Accuracy:  {edge_acc:.2f}%")
+    print(f"ExpRate (TF):       {exprate:.2f}%")
+    print(f"Total Samples:      {total_samples}")
+    print(f"{'='*50}")
+
 
     # 5. Qualitative Inference
     print("\n--- Generation Example ---")
     if len(dataset) > 0:
-        example_idx = 0 
+        example_idx = 1
         inkml_path = dataset.inkml_files[example_idx]
         print(f"Input: {os.path.basename(inkml_path)}")
         
         strokes = parse_inkml_and_process(inkml_path)
         
         if strokes:
+            # Greedy decode
             latex_tokens = greedy_decode(model, strokes, vocab_inv, relation_inv)
             print(f"Predicted LaTeX: {tokens_to_latex(latex_tokens)}")
-            print(f"Raw tokens: {latex_tokens}")  # Keep raw for debugging
+            print(f"Raw tokens: {latex_tokens}")
             
             lg_path = os.path.join(TEST_LG, os.path.basename(inkml_path).replace('.inkml', '.lg'))
             if os.path.exists(lg_path):

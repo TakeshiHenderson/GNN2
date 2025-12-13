@@ -72,7 +72,7 @@ def build_vocab_from_dataset(data_dir, output_file="vocab.json"):
     relation_vocab = {'<PAD>': 0}
     
     # Important: Ensure the End-Child relation '-' exists
-    # [cite_start]The paper uses '-' for the virtual end nodes [cite: 204]
+    # The paper uses '-' for the virtual end nodes
     if '-' not in unique_relations:
         unique_relations.add('-')
         

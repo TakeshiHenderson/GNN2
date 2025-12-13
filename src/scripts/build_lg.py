@@ -123,8 +123,6 @@ class InkmlToLG:
         if xml_id and xml_id in xml_map:
             my_obj_id = xml_map[xml_id]
             
-            # However, if it is a container like mfrac or msqrt, we still need to process children
-            # to link them TO this node.
             
             # Process Children
             child_roots = []
@@ -207,34 +205,9 @@ class InkmlToLG:
 
 if __name__ == "__main__":
     converter = InkmlToLG()
-    
-    # Test on your specific file
-    # Ensure this points to the correct location
-    # converter.convert("/home/takeshi/Documents/AOL DL/crohme_dataset/train/inkml/MfrDB1288.inkml", "/home/takeshi/Documents/AOL DL/crohme_dataset/train/lg_new_1/MfrDB1288.lg")
-    # print("Conversion complete. Check MfrDB1288.lg")
     input_path = "/home/takeshi/Documents/AOL DL/crohme_dataset/test/inkml_gt/0046.inkml"
     output_path = "./temp.lg"
     converter.convert(input_path, output_path)
     print(f"Output written to: {output_path}")
     with open(output_path, "r") as f:
         print(f.read())
-
-
-# if __name__ == "__main__":
-#     converter = InkmlToLG()
-    
-#     # Example Usage: Process a directory
-#     input_dir = "../crohme_dataset/test/inkml_gt/"
-#     output_dir = "../crohme_dataset/test/lg_new_1/"
-    
-#     os.makedirs(output_dir, exist_ok=True)
-    
-#     files = glob.glob(os.path.join(input_dir, "*.inkml"))
-#     print(f"Found {len(files)} InkML files.")
-    
-#     for f_path in tqdm(files):
-#         fname = os.path.basename(f_path)
-#         name_only = os.path.splitext(fname)[0]
-#         out_path = os.path.join(output_dir, name_only + ".lg")
-        
-#         converter.convert(f_path, out_path)
