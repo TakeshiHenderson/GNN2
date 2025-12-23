@@ -290,8 +290,8 @@ def parse_inkml_and_process(file_path):
 
 if __name__ == "__main__":
     # Test block - Visualize source graph construction
-    file_path = "/home/takeshi/Documents/AOL DL/crohme_dataset/train/inkml/0100.inkml"
-    # file_path = "/home/takeshi/Documents/AOL DL/crohme_dataset/test/inkml/0198.inkml"
+    # file_path = "/home/takeshi/Documents/AOL DL/crohme_dataset/train/inkml/0100.inkml"
+    file_path = "/home/takeshi/Documents/AOL DL/crohme_dataset/test/inkml/0198.inkml"
     if os.path.exists(file_path):
         print(f"Processing: {file_path}")
         

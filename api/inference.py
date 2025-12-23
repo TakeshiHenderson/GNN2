@@ -193,7 +193,7 @@ class EquationRecognizer:
         model_conf = config.get_model_config(len(symbol_vocab), len(relation_vocab))
         self.model = GraphToGraphModel(model_conf).to(config.DEVICE)
         
-        checkpoint_path = os.path.join(config.CHECKPOINT_DIR, "checkpoint_ep35.pth")
+        checkpoint_path = os.path.join(config.CHECKPOINT_DIR, "checkpoint_ep44.pth")
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
         

@@ -24,7 +24,7 @@ def load_best_model(vocab_len, relation_len):
     model = GraphToGraphModel(model_conf).to(config.DEVICE)
     
     # Check for best model first, then fallback to latest epoch
-    best_path = os.path.join(config.CHECKPOINT_DIR, "checkpoint_ep48.pth")
+    best_path = os.path.join(config.CHECKPOINT_DIR, "checkpoint_ep44.pth")
     latest_path = os.path.join(config.CHECKPOINT_DIR, f"checkpoint_ep{config.EPOCHS}.pth")
     
     if os.path.exists(best_path):
@@ -443,7 +443,7 @@ def evaluate_test_set(num_samples=None, split='test'):
     # 5. Qualitative Inference
     print("\n--- Generation Example ---")
     if len(dataset) > 0:
-        example_idx = 1
+        example_idx = 0
         inkml_path = dataset.inkml_files[example_idx]
         print(f"Input: {os.path.basename(inkml_path)}")
         

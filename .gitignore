@@ -46,3 +46,9 @@ papers/
 
 # Keep inkml2img if it contains your source code
 inkml2img/ 
+
+*.tex
+
+checkpoints_2/
+checkpoints_3/
+checkpoints_4/
