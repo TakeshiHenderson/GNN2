@@ -12,7 +12,18 @@ uv add fastapi uvicorn python-multipart
 uv run uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-Open http://localhost:8000 in your browser.
+
+open http://localhost:8000 in your browser.
+
+### Docker Run
+
+Alternatively, to run with Docker:
+
+```bash
+docker-compose up --build
+```
+This will build the image and start the server on port 8000.
+
 
 ## Usage
 
