@@ -1,0 +1,17 @@
+
+
+services:
+  app:
+    build: .
+    image: gnn-equation-solver
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+      - ./api:/app/api
+      - ./frontend:/app/frontend
+      - ./checkpoints_8:/app/checkpoints_8
+      - ./output:/app/output
+    environment:
+      - PYTHONPATH=/app
+    restart: always

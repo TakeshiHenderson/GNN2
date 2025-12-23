@@ -1,0 +1,14 @@
+__pycache__
+*.pyc
+.git
+.venv
+.env
+output/
+crohme_dataset/
+checkpoints/
+checkpoints_1/
+checkpoints_5/
+checkpoints_6/
+checkpoints_7/
+*.log
+.DS_Store
